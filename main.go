@@ -20,6 +20,7 @@ import (
 
 	"github.com/NYTimes/gziphandler"
 	"github.com/alecthomas/kong"
+	oidclogin "github.com/reddec/oidc-login"
 	treeblood "github.com/wyatt915/goldmark-treeblood"
 	"github.com/yuin/goldmark"
 	highlighting "github.com/yuin/goldmark-highlighting/v2"
@@ -50,10 +51,19 @@ var config struct {
 		KeyFile  string `help:"Key file" env:"KEY" default:"/etc/tls/tls.key"`
 		CertFile string `help:"Certificate file" env:"CERT" default:"/etc/tls/tls.crt"`
 	} `embed:"" prefix:"tls-" envprefix:"MDWEB_TLS_"`
+	OIDC struct {
+		Enabled      bool   `help:"Enable OIDC" env:"ENABLED"`
+		Issuer       string `help:"Issuer URL" env:"ISSUER"`
+		ClientID     string `help:"Client ID" env:"CLIENT_ID"`
+		ClientSecret string `help:"Client secret" env:"CLIENT_SECRET"`
+		TrustProxy   bool   `name:"trust-proxy" env:"TRUST_PROXY" help:"Trust X-Forwarded-For from downstream proxies"`
+	} `embed:"" prefix:"oidc-" envprefix:"MDWEB_OIDC_"`
 }
 
 func main() {
 	kong.Parse(&config)
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
+	defer cancel()
 
 	srv, err := newServer(config.Data, config.Base, config.Cache)
 	if err != nil {
@@ -62,6 +72,34 @@ func main() {
 	}
 
 	var handler http.Handler = srv
+
+	if config.OIDC.Enabled {
+
+		auth, err := oidclogin.New(ctx, oidclogin.Config{
+			IssuerURL:    config.OIDC.Issuer,
+			ClientID:     config.OIDC.ClientID,
+			ClientSecret: config.OIDC.ClientSecret,
+			TrustProxy:   config.OIDC.TrustProxy,
+			Logger: oidclogin.LoggerFunc(func(level oidclogin.Level, msg string) {
+				switch level {
+				case oidclogin.LogInfo:
+					slog.Info("oidc login", "message", msg)
+				case oidclogin.LogWarn:
+					slog.Warn("oidc login", "message", msg)
+				case oidclogin.LogError:
+					slog.Error("oidc login", "message", msg)
+				default:
+					slog.Info("oidc login", "level", level, "message", msg)
+				}
+			}),
+		})
+		if err != nil {
+			slog.Error("failed to initialize oidc login", "error", err)
+			os.Exit(2)
+		}
+		handler = auth.Secure(handler)
+		slog.Info("OIDC enabled", "issuer", config.OIDC.Issuer)
+	}
 
 	if !config.DisableGZIP {
 		handler = gziphandler.GzipHandler(handler)
@@ -72,9 +110,6 @@ func main() {
 		Addr:    config.Bind,
 		Handler: handler,
 	}
-
-	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
-	defer cancel()
 
 	go func() {
 		<-ctx.Done()
@@ -95,7 +130,7 @@ func main() {
 	}
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("failed to start http server", "error", err)
-		os.Exit(2)
+		os.Exit(3)
 	}
 }
 

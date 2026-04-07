@@ -15,6 +15,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - Optional in-memory page cache
 - GZIP compression (enabled by default)
 - TLS/HTTPS support
+- OIDC authentication
 - Graceful shutdown
 - Mobile-friendly, no-JS HTML output
 - Single binary, no external dependencies at runtime
@@ -66,6 +67,11 @@ All flags can also be set via environment variables.
 | `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
 | `--disable-gzip` | | `MDWEB_DISABLE_GZIP` | `false` | Disable gzip compression |
 | `--graceful-shutdown` | | `MDWEB_GRACEFUL_SHUTDOWN` | `10s` | Graceful shutdown timeout |
+| `--oidc-enabled` | | `MDWEB_OIDC_ENABLED` | `false` | Enable OIDC authentication |
+| `--oidc-issuer` | | `MDWEB_OIDC_ISSUER` | | OIDC issuer URL |
+| `--oidc-client-id` | | `MDWEB_OIDC_CLIENT_ID` | | OIDC client ID |
+| `--oidc-client-secret` | | `MDWEB_OIDC_CLIENT_SECRET` | | OIDC client secret |
+| `--oidc-trust-proxy` | | `MDWEB_OIDC_TRUST_PROXY` | `false` | Trust X-Forwarded-* headers |
 
 ## URL Routing
 
