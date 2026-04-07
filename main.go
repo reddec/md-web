@@ -46,6 +46,7 @@ var config struct {
 	Cache            bool          `name:"cache" short:"c" env:"MDWEB_CACHE" help:"Enable caching"`
 	Title            bool          `name:"title" short:"t" env:"MDWEB_TITLE" help:"Show title from metadata or filepath"`
 	DisableGZIP      bool          `help:"Disable gzip compression for HTTP" env:"MDWEB_DISABLE_GZIP"`
+	HTMLRewrite      bool          `name:"html-rewrite" env:"HTML_REWRITE" help:"Re-write .html to .md"`
 	TLS              struct {
 		Enabled  bool   `help:"Enable TLS" env:"ENABLED"`
 		KeyFile  string `help:"Key file" env:"KEY" default:"/etc/tls/tls.key"`
@@ -65,7 +66,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	srv, err := newServer(config.Data, config.Base, config.Cache)
+	srv, err := newServer(config.Data, config.Base, config.Cache, config.HTMLRewrite)
 	if err != nil {
 		slog.Error("failed to initialize service", "error", err)
 		os.Exit(1)
@@ -144,7 +145,7 @@ type Page struct {
 	//UpdatedAt time.Time
 }
 
-func newServer(baseDir string, baseURL string, enableCache bool) (*Server, error) {
+func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*Server, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -178,6 +179,7 @@ func newServer(baseDir string, baseURL string, enableCache bool) (*Server, error
 	return &Server{
 		baseDir:     rootDir,
 		enableCache: enableCache,
+		rewriteHTML: rewriteHTML,
 		templ:       tpl,
 		md:          md,
 	}, nil
@@ -187,13 +189,17 @@ type Server struct {
 	baseDir     string
 	cache       sync.Map // string -> bytes
 	enableCache bool
+	rewriteHTML bool
 	templ       *template.Template
 	md          goldmark.Markdown
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	const HTML = ".html"
 	p := path.Clean(r.URL.Path)
-	if p == "" || p == "/" || strings.HasSuffix(r.URL.Path, "/") {
+	if s.rewriteHTML && strings.HasSuffix(p, HTML) {
+		p = p[:len(p)-len(HTML)] + ".md"
+	} else if p == "" || p == "/" || strings.HasSuffix(r.URL.Path, "/") {
 		p = path.Join(p, "index.md")
 	} else if !strings.HasSuffix(p, ".md") {
 		p += ".md"

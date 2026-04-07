@@ -12,6 +12,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - Mermaid diagrams
 - YAML frontmatter for metadata
 - Base URL rewriting for subpath deployments
+- HTML-to-Markdown URL rewriting (`.html` requests served as `.md`)
 - Optional in-memory page cache
 - GZIP compression (enabled by default)
 - TLS/HTTPS support
@@ -20,7 +21,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - Mobile-friendly, no-JS HTML output
 - Single binary, no external dependencies at runtime
 
-(support rootless docker)
+Supports rootless Docker via `scratch` base image with static binary.
 
 ## Install
 
@@ -49,6 +50,9 @@ md-web -c -t
 # Serve under a subpath
 md-web -B /docs
 
+# Rewrite .html URLs to .md
+md-web --html-rewrite
+
 # With TLS
 md-web --tls-enabled --tls-cert-file cert.crt --tls-key-file key.key
 ```
@@ -64,6 +68,7 @@ All flags can also be set via environment variables.
 | `--data` | `-d` | `MDWEB_DATA` | `./` | Directory with Markdown files |
 | `--cache` | `-c` | `MDWEB_CACHE` | `false` | Enable in-memory page cache |
 | `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
+| `--html-rewrite` | | `HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
 | `--tls-enabled` | | `MDWEB_TLS_ENABLED` | `false` | Enable HTTPS |
 | `--tls-cert-file` | | `MDWEB_TLS_CERT` | `/etc/tls/tls.crt` | Path to TLS certificate |
 | `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
@@ -79,6 +84,7 @@ All flags can also be set via environment variables.
 
 - `/` and `/path/` serve `index.md` from the corresponding directory
 - `/page` resolves to `page.md`
+- `/page.html` resolves to `page.md` (when `--html-rewrite` is enabled)
 - No `.md` extension needed in URLs
 
 ## Frontmatter

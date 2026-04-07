@@ -5,6 +5,7 @@ title: "MAIN page"
 
 
 - [[Overview]]
+- [[special]]
 - [Special link with .md](./special.md)
 - [Link without extension](./special)
 
