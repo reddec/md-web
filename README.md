@@ -20,6 +20,8 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - Mobile-friendly, no-JS HTML output
 - Single binary, no external dependencies at runtime
 
+(support rootless docker)
+
 ## Install
 
 ```bash
