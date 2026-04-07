@@ -13,6 +13,9 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - YAML frontmatter for metadata
 - Base URL rewriting for subpath deployments
 - Optional in-memory page cache
+- GZIP compression (enabled by default)
+- TLS/HTTPS support
+- Graceful shutdown
 - Mobile-friendly, no-JS HTML output
 - Single binary, no external dependencies at runtime
 
@@ -42,17 +45,27 @@ md-web -c -t
 
 # Serve under a subpath
 md-web -B /docs
+
+# With TLS
+md-web --tls-enabled --tls-cert-file cert.crt --tls-key-file key.key
 ```
 
 ## Configuration
 
-| Flag | Env | Default | Description |
-|------|-----|---------|-------------|
-| `-b, --bind` | `BIND` | `:8080` | HTTP server bind address |
-| `-B, --base` | `BASE` | | Base URL prefix for link rewriting |
-| `-d, --data` | `DATA` | `./` | Directory with Markdown files |
-| `-c, --cache` | `CACHE` | `false` | Enable in-memory page cache |
-| `-t, --title` | `TITLE` | `false` | Show title from frontmatter or filename |
+All flags can also be set via environment variables.
+
+| Flag | Short | Env | Default | Description |
+|------|-------|-----|---------|-------------|
+| `--bind` | `-b` | `MDWEB_BIND` | `:8080` | HTTP server bind address |
+| `--base` | `-B` | `MDWEB_BASE` | | Base URL prefix for link rewriting |
+| `--data` | `-d` | `MDWEB_DATA` | `./` | Directory with Markdown files |
+| `--cache` | `-c` | `MDWEB_CACHE` | `false` | Enable in-memory page cache |
+| `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
+| `--tls-enabled` | | `MDWEB_TLS_ENABLED` | `false` | Enable HTTPS |
+| `--tls-cert-file` | | `MDWEB_TLS_CERT` | `/etc/tls/tls.crt` | Path to TLS certificate |
+| `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
+| `--disable-gzip` | | `MDWEB_DISABLE_GZIP` | `false` | Disable gzip compression |
+| `--graceful-shutdown` | | `MDWEB_GRACEFUL_SHUTDOWN` | `10s` | Graceful shutdown timeout |
 
 ## URL Routing
 

@@ -4,6 +4,7 @@ go 1.26.1
 
 require (
 	github.com/BurntSushi/toml v1.5.0 // indirect
+	github.com/NYTimes/gziphandler v1.1.1 // indirect
 	github.com/alecthomas/chroma/v2 v2.23.1 // indirect
 	github.com/alecthomas/kong v1.15.0 // indirect
 	github.com/dlclark/regexp2 v1.11.5 // indirect
