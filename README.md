@@ -68,7 +68,7 @@ All flags can also be set via environment variables.
 | `--data` | `-d` | `MDWEB_DATA` | `./` | Directory with Markdown files |
 | `--cache` | `-c` | `MDWEB_CACHE` | `false` | Enable in-memory page cache |
 | `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
-| `--html-rewrite` | | `HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
+| `--html-rewrite` | | `MDWEB_HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
 | `--tls-enabled` | | `MDWEB_TLS_ENABLED` | `false` | Enable HTTPS |
 | `--tls-cert-file` | | `MDWEB_TLS_CERT` | `/etc/tls/tls.crt` | Path to TLS certificate |
 | `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
