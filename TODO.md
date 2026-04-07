@@ -1,0 +1,11 @@
+- [ ] Listing
+- [ ] Custom layout (+inject, +devmode)
+- [ ] Home button / navigation
+- [ ] Fuzzy search
+- [ ] Tags visualization & search
+- [ ] Metadata & og data
+- [ ] Script injection (eg: chats)
+- [ ] Modification (upload/edit/delete) (low priority)
+- [ ] Backend
+  - [ ] Lightweight (Goja)
+  - [ ] Proxy
