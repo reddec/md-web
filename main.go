@@ -46,7 +46,7 @@ var config struct {
 	Cache            bool          `name:"cache" short:"c" env:"MDWEB_CACHE" help:"Enable caching"`
 	Title            bool          `name:"title" short:"t" env:"MDWEB_TITLE" help:"Show title from metadata or filepath"`
 	DisableGZIP      bool          `help:"Disable gzip compression for HTTP" env:"MDWEB_DISABLE_GZIP"`
-	HTMLRewrite      bool          `name:"html-rewrite" env:"HTML_REWRITE" help:"Re-write .html to .md"`
+	HTMLRewrite      bool          `name:"html-rewrite" env:"MDWEB_HTML_REWRITE" help:"Re-write .html to .md"`
 	TLS              struct {
 		Enabled  bool   `help:"Enable TLS" env:"ENABLED"`
 		KeyFile  string `help:"Key file" env:"KEY" default:"/etc/tls/tls.key"`
