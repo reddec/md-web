@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{{.Title}}</title>
+    <style>
+        *,
+        *::before,
+        *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            font-size: 1.1rem;
+            line-height: 1.7;
+            color: #1a1a1a;
+            background: #fafafa;
+            padding: 0.5rem 1rem 1.5rem;
+        }
+
+        main {
+            max-width: 80rem;
+            margin: 0 auto;
+            overflow-wrap: break-word;
+        }
+
+        h1, h2, h3, h4, h5, h6 {
+            line-height: 1.3;
+            margin-top: 1.5em;
+            margin-bottom: 0.5em;
+        }
+
+        h1 { font-size: 1.9rem; }
+        h2 { font-size: 1.5rem; }
+        h3 { font-size: 1.25rem; }
+
+        p, ul, ol, blockquote, pre, table {
+            margin-bottom: 1.15em;
+        }
+
+        a {
+            color: #1a6be0;
+            text-decoration-thickness: 1px;
+            text-underline-offset: 2px;
+        }
+
+        a:hover {
+            color: #0f4da0;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 4px;
+        }
+
+        pre {
+            background: #f0f0f0;
+            padding: 1rem;
+            overflow-x: auto;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+
+        code {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 0.875em;
+        }
+
+        :not(pre) > code {
+            background: #f0f0f0;
+            padding: 0.15em 0.35em;
+            border-radius: 3px;
+        }
+
+        blockquote {
+            border-left: 3px solid #ccc;
+            padding-left: 1rem;
+            color: #555;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid #ddd;
+        }
+
+        th {
+            font-weight: 600;
+        }
+
+        hr {
+            border: none;
+            border-top: 1px solid #ddd;
+            margin: 2rem 0;
+        }
+
+        ul, ol {
+            padding-left: 1.5em;
+        }
+
+
+    </style>
+</head>
+<body>
+    <main>
+        {{if .ShowTitle}}
+            <h1>{{.Title}}</h1>
+        {{end}}
+        {{.Content}}
+    </main>
+</body>
+</html>
