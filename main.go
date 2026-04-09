@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	_ "embed"
 	"errors"
@@ -12,7 +13,6 @@ import (
 	"os"
 	"os/signal"
 	"path"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -33,6 +33,8 @@ import (
 	"go.abhg.dev/goldmark/frontmatter"
 	"go.abhg.dev/goldmark/mermaid"
 	"go.abhg.dev/goldmark/wikilink"
+
+	"github.com/reddec/md-web/internal/store"
 )
 
 //go:embed layout.gohtml
@@ -166,7 +168,7 @@ func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*
 		),
 	)
 
-	rootDir, err := filepath.Abs(baseDir)
+	storage, err := store.New(baseDir)
 	if err != nil {
 		return nil, err
 	}
@@ -177,7 +179,7 @@ func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*
 	}
 
 	return &Server{
-		baseDir:     rootDir,
+		storage:     storage,
 		enableCache: enableCache,
 		rewriteHTML: rewriteHTML,
 		templ:       tpl,
@@ -186,6 +188,7 @@ func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*
 }
 
 type Server struct {
+	storage     *store.Store
 	baseDir     string
 	cache       sync.Map // string -> bytes
 	enableCache bool
@@ -199,10 +202,6 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	p := path.Clean(r.URL.Path)
 	if s.rewriteHTML && strings.HasSuffix(p, HTML) {
 		p = p[:len(p)-len(HTML)] + ".md"
-	} else if p == "" || p == "/" || strings.HasSuffix(r.URL.Path, "/") {
-		p = path.Join(p, "index.md")
-	} else if !strings.HasSuffix(p, ".md") {
-		p += ".md"
 	}
 
 	var pageContent []byte
@@ -231,13 +230,17 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) getPage(p string) ([]byte, error) {
-	content, err := os.ReadFile(filepath.Join(s.baseDir, p))
+	doc, err := s.storage.Open(p)
+	if err != nil {
+		return nil, fmt.Errorf("open page %q: %w", p, err)
+	}
+	defer doc.Close()
+	content, err := doc.ReadBytes()
 	if err != nil {
 		return nil, fmt.Errorf("read file %q: %w", p, err)
 	}
-	ctx := parser.NewContext()
 	var output bytes.Buffer
-	if err := s.md.Convert(content, &output, parser.WithContext(ctx)); err != nil {
+	if err := s.md.Convert(content, &output); err != nil {
 		return nil, fmt.Errorf("convert file %q: %w", p, err)
 	}
 
@@ -245,15 +248,10 @@ func (s *Server) getPage(p string) ([]byte, error) {
 
 	page := &Page{
 		Path:      p,
-		Title:     title,
+		Title:     cmp.Or(doc.Front().Title, title),
 		Content:   template.HTML(output.String()),
 		ShowTitle: config.Title,
-	}
-	if fm := frontmatter.Get(ctx); fm != nil {
-		if err := fm.Decode(page); err != nil {
-			// we can not fail here
-			slog.Error("failed to decode frontmatter", "path", p, "error", err)
-		}
+		Tags:      doc.Front().Tags,
 	}
 
 	var buffer bytes.Buffer
