@@ -178,6 +178,18 @@ Is all ok?`
 		assert.Equal(t, raw, strings.TrimSpace(content))
 	})
 
+	t.Run("malformed document - short file", func(t *testing.T) {
+		const raw = `12`
+		file := saveFile(t, raw)
+		doc, err := store.OpenFile(file)
+		require.NoError(t, err)
+		content, err := doc.ReadString()
+		require.NoError(t, err)
+
+		assert.Equal(t, "", doc.Front().Title)
+		assert.Equal(t, raw, strings.TrimSpace(content))
+	})
+
 	// coverage happiness
 
 	t.Run("when something goes wrong", func(t *testing.T) {

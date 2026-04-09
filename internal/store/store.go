@@ -4,7 +4,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"strings"
 )
 
 type Entry struct {
@@ -25,11 +24,6 @@ func New(filePath string) (*Store, error) {
 }
 
 func (s *Store) Open(fPath string) (*OpenedDocument, error) {
-	if strings.HasSuffix(fPath, "/") {
-		fPath += "index.md"
-	} else if !strings.HasSuffix(fPath, ".md") {
-		fPath = fPath + ".md"
-	}
 	pth := s.resolvePath(fPath)
 	return OpenFile(pth)
 }
@@ -48,6 +42,23 @@ func (s *Store) List(fPath string) ([]Entry, error) {
 		})
 	}
 	return ans, nil
+}
+
+func (s *Store) IsDir(fPath string) bool {
+	realPath := s.resolvePath(fPath)
+	info, err := os.Stat(realPath)
+	return err == nil && info.IsDir()
+}
+
+func (s *Store) IsFile(fPath string) bool {
+	realPath := s.resolvePath(fPath)
+	info, err := os.Stat(realPath)
+	return err == nil && !info.IsDir()
+}
+
+func (s *Store) IsRoot(fPath string) bool {
+	realPath := s.resolvePath(fPath)
+	return realPath == s.baseDir
 }
 
 func (s *Store) resolvePath(relPath string) string {

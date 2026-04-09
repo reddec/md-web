@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -26,6 +27,13 @@ type Document struct {
 type OpenedDocument struct {
 	*Document
 	io.Closer
+}
+
+func Virtual(front Frontmatter, content string) *Document {
+	return &Document{
+		data:  bufio.NewReader(strings.NewReader(content)),
+		front: front,
+	}
 }
 
 // OpenFile parses markdown file in two phases: as frontmatter, then as raw file.
@@ -62,6 +70,10 @@ func Open(src io.Reader) (*Document, error) {
 
 	data, err := body.ReadString('\n')
 	if err != nil {
+		if errors.Is(err, io.EOF) {
+			// too short
+			return nil, ErrMalformedDocument
+		}
 		return nil, fmt.Errorf("peek: %w", err)
 	}
 
@@ -72,11 +84,11 @@ func Open(src io.Reader) (*Document, error) {
 	var header bytes.Buffer
 	for {
 		content, err := body.ReadBytes('\n')
-		if err != nil && errors.Is(err, io.EOF) {
-			// no last delimiter - raw doc
-			return nil, ErrMalformedDocument
-		}
 		if err != nil {
+			if errors.Is(err, io.EOF) {
+				// no last delimiter - raw doc
+				return nil, ErrMalformedDocument
+			}
 			return nil, fmt.Errorf("read: %w", err)
 		}
 

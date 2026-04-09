@@ -49,6 +49,7 @@ var config struct {
 	Title            bool          `name:"title" short:"t" env:"MDWEB_TITLE" help:"Show title from metadata or filepath"`
 	DisableGZIP      bool          `help:"Disable gzip compression for HTTP" env:"MDWEB_DISABLE_GZIP"`
 	HTMLRewrite      bool          `name:"html-rewrite" env:"MDWEB_HTML_REWRITE" help:"Re-write .html to .md"`
+	Listing          bool          `name:"listing" short:"l" env:"LISTING" help:"Enable directory listing if no index.md there" `
 	TLS              struct {
 		Enabled  bool   `help:"Enable TLS" env:"ENABLED"`
 		KeyFile  string `help:"Key file" env:"KEY" default:"/etc/tls/tls.key"`
@@ -68,7 +69,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	srv, err := newServer(config.Data, config.Base, config.Cache, config.HTMLRewrite)
+	srv, err := newServer(config.Data, config.Base, config.Cache, config.Listing, config.HTMLRewrite)
 	if err != nil {
 		slog.Error("failed to initialize service", "error", err)
 		os.Exit(1)
@@ -147,7 +148,7 @@ type Page struct {
 	//UpdatedAt time.Time
 }
 
-func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*Server, error) {
+func newServer(baseDir string, baseURL string, enableCache, enableListing, rewriteHTML bool) (*Server, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -179,38 +180,62 @@ func newServer(baseDir string, baseURL string, enableCache, rewriteHTML bool) (*
 	}
 
 	return &Server{
-		storage:     storage,
-		enableCache: enableCache,
-		rewriteHTML: rewriteHTML,
-		templ:       tpl,
-		md:          md,
+		storage:       storage,
+		enableCache:   enableCache,
+		enableListing: enableListing,
+		rewriteHTML:   rewriteHTML,
+		templ:         tpl,
+		md:            md,
 	}, nil
 }
 
 type Server struct {
-	storage     *store.Store
-	baseDir     string
-	cache       sync.Map // string -> bytes
-	enableCache bool
-	rewriteHTML bool
-	templ       *template.Template
-	md          goldmark.Markdown
+	storage       *store.Store
+	cache         sync.Map // string -> bytes
+	enableCache   bool
+	enableListing bool
+	rewriteHTML   bool
+	templ         *template.Template
+	md            goldmark.Markdown
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	const HTML = ".html"
-	p := path.Clean(r.URL.Path)
-	if s.rewriteHTML && strings.HasSuffix(p, HTML) {
-		p = p[:len(p)-len(HTML)] + ".md"
-	}
 
 	var pageContent []byte
-	if content, ok := s.cache.Load(p); ok {
+	if content, ok := s.cache.Load(r.URL.Path); ok {
 		pageContent = content.([]byte)
 	} else {
-		page, err := s.getPage(p)
+		var err error
+		var page []byte
+		if s.enableListing && s.storage.IsDir(r.URL.Path) {
+			if !strings.HasSuffix(r.URL.Path, "/") {
+				// redirect to `./`
+				w.Header().Set("Location", "./"+path.Base(r.URL.Path)+"/")
+				w.WriteHeader(http.StatusFound)
+				return
+			}
+
+			if p := path.Join(r.URL.Path, "index.md"); s.storage.IsFile(p) {
+				page, err = s.getPage(p)
+			} else {
+				page, err = s.getDirectory(r.URL.Path)
+			}
+		} else {
+			p := r.URL.Path
+			if strings.HasSuffix(r.URL.Path, "/") {
+				p += "index.md"
+			} else if s.rewriteHTML && strings.HasSuffix(r.URL.Path, HTML) {
+				p = p[:len(p)-len(HTML)] + ".md"
+			} else if !strings.HasSuffix(r.URL.Path, ".md") {
+				p = p + ".md"
+			}
+
+			page, err = s.getPage(p)
+		}
+
 		if err != nil {
-			slog.Error("failed to get page", "path", p, "error", err)
+			slog.Error("failed to get page", "path", r.URL.Path, "error", err)
 			if errors.Is(err, os.ErrNotExist) {
 				w.WriteHeader(http.StatusNotFound)
 			} else {
@@ -219,7 +244,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if s.enableCache {
-			s.cache.Store(p, page)
+			s.cache.Store(r.URL.Path, page)
 		}
 		pageContent = page
 	}
@@ -232,7 +257,9 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (s *Server) getPage(p string) ([]byte, error) {
 	doc, err := s.storage.Open(p)
 	if err != nil {
+
 		return nil, fmt.Errorf("open page %q: %w", p, err)
+
 	}
 	defer doc.Close()
 	content, err := doc.ReadBytes()
@@ -252,6 +279,31 @@ func (s *Server) getPage(p string) ([]byte, error) {
 		Content:   template.HTML(output.String()),
 		ShowTitle: config.Title,
 		Tags:      doc.Front().Tags,
+	}
+
+	var buffer bytes.Buffer
+	if err := s.templ.Execute(&buffer, page); err != nil {
+		return nil, fmt.Errorf("execute layout %q: %w", p, err)
+	}
+
+	return buffer.Bytes(), nil
+}
+
+func (s *Server) getDirectory(p string) ([]byte, error) {
+	list, err := s.storage.List(p)
+	if err != nil {
+		return nil, fmt.Errorf("list: %w", err)
+	}
+	var output bytes.Buffer
+	if err := s.md.Convert([]byte(renderListing(!s.storage.IsRoot(p), list)), &output); err != nil {
+		return nil, fmt.Errorf("convert file %q: %w", p, err)
+	}
+
+	page := &Page{
+		Path:      p,
+		Title:     path.Base(p) + "/",
+		Content:   template.HTML(output.String()),
+		ShowTitle: config.Title,
 	}
 
 	var buffer bytes.Buffer
@@ -288,4 +340,29 @@ func (r *linkReWriter) Transform(node *ast.Document, _ text.Reader, _ parser.Con
 		}
 		return ast.WalkContinue, nil
 	})
+}
+
+func renderListing(hasParent bool, list []store.Entry) string {
+	var buffer strings.Builder
+
+	if hasParent {
+		buffer.WriteString("- [⤴️ ..](../)\n")
+	}
+
+	for _, entry := range list {
+		if !entry.Directory && !strings.HasSuffix(entry.Path, ".md") {
+			continue
+		}
+		buffer.WriteString("- [")
+		if entry.Directory {
+			buffer.WriteString("🗀 ")
+		} else {
+			buffer.WriteString("🖹 ")
+		}
+		buffer.WriteString(entry.Path)
+		buffer.WriteString("](")
+		buffer.WriteString(entry.Path)
+		buffer.WriteString(")\n")
+	}
+	return buffer.String()
 }
