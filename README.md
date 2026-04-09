@@ -13,6 +13,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - YAML frontmatter for metadata
 - Base URL rewriting for subpath deployments
 - HTML-to-Markdown URL rewriting (`.html` requests served as `.md`)
+- Directory listing for folders without `index.md`
 - Optional in-memory page cache
 - GZIP compression (enabled by default)
 - TLS/HTTPS support
@@ -53,6 +54,9 @@ md-web -B /docs
 # Rewrite .html URLs to .md
 md-web --html-rewrite
 
+# Enable directory listing
+md-web -l
+
 # With TLS
 md-web --tls-enabled --tls-cert-file cert.crt --tls-key-file key.key
 ```
@@ -69,6 +73,7 @@ All flags can also be set via environment variables.
 | `--cache` | `-c` | `MDWEB_CACHE` | `false` | Enable in-memory page cache |
 | `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
 | `--html-rewrite` | | `MDWEB_HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
+| `--listing` | `-l` | `MDWEB_LISTING` | `false` | Enable directory listing if no `index.md` present |
 | `--tls-enabled` | | `MDWEB_TLS_ENABLED` | `false` | Enable HTTPS |
 | `--tls-cert-file` | | `MDWEB_TLS_CERT` | `/etc/tls/tls.crt` | Path to TLS certificate |
 | `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
@@ -83,6 +88,7 @@ All flags can also be set via environment variables.
 ## URL Routing
 
 - `/` and `/path/` serve `index.md` from the corresponding directory
+- `/path/` shows a directory listing if no `index.md` exists (when `--listing` is enabled)
 - `/page` resolves to `page.md`
 - `/page.html` resolves to `page.md` (when `--html-rewrite` is enabled)
 - No `.md` extension needed in URLs
