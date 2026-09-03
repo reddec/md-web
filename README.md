@@ -26,6 +26,14 @@ Supports rootless Docker via `scratch` base image with static binary.
 
 ## Install
 
+Linux one-liner (amd64 and arm64):
+
+```bash
+curl -fsSL "https://github.com/reddec/md-web/releases/latest/download/md-web_linux-$(uname -m)" | install -Dm755 /dev/stdin ~/.local/bin/md-web
+```
+
+Or with Go:
+
 ```bash
 go install github.com/reddec/md-web@latest
 ```
