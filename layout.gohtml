@@ -14,6 +14,7 @@
         }
 
         body {
+            display: flex;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
             font-size: 1.1rem;
             line-height: 1.7;
@@ -25,6 +26,7 @@
         main {
             max-width: 80rem;
             margin: 0 auto;
+            min-width: 0; /* flex item must shrink below its longest word */
             overflow-wrap: break-word;
         }
 
@@ -110,9 +112,149 @@
         }
 
 
+        .nav-toggle { display: none; }
+        .nav-overlay { display: none; }
+
+        .nav-open-button {
+            display: block;
+            position: fixed;
+            top: 0.5rem;
+            left: 0.5rem;
+            z-index: 11;
+            width: 2.2rem;
+            height: 2.2rem;
+            line-height: 2.2rem;
+            text-align: center;
+            background: #242a35;
+            border: 1px solid #242a35;
+            border-radius: 6px;
+            color: #e6ecf5;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+        }
+
+        /* sidebar hidden (desktop collapsed): the button floats on light content */
+        .nav-toggle:checked ~ .nav-open-button {
+            background: #fff;
+            border-color: #ddd;
+            color: #1a1a1a;
+        }
+
+        .sidebar {
+            position: sticky;
+            top: 0;
+            align-self: flex-start;
+            width: 13rem;
+            flex-shrink: 0;
+            min-height: 100vh;
+            max-height: 100vh;
+            overflow-y: auto;
+            margin: -0.5rem 0 -1.5rem -1rem; /* cancel the body padding: flush left, full height */
+            padding: 3.2rem 0.9rem 0.9rem; /* top clears the burger button */
+            background: #242a35;
+            overflow-wrap: anywhere;
+        }
+
+        .sidebar a {
+            color: #9fb0c7;
+        }
+
+        .sidebar a:hover {
+            color: #e6ecf5;
+        }
+
+        .sidebar .active {
+            color: #fff;
+        }
+
+        .sidebar ul {
+            list-style: none;
+            padding-left: 0.9rem;
+            margin: 0;
+        }
+
+        .sidebar > ul {
+            padding-left: 0;
+        }
+
+        .sidebar li {
+            margin: 0.15rem 0;
+        }
+
+        .sidebar .active {
+            font-weight: 700;
+        }
+
+        /* the whole tree is rendered; only the current path stays visible */
+        .sidebar ul ul {
+            display: none;
+        }
+
+        .sidebar li:has(.active) > ul {
+            display: block;
+        }
+
+        /* desktop: the toggle collapses the sidebar entirely */
+        .nav-toggle:checked ~ .sidebar {
+            display: none;
+        }
+
+        @media (max-width: 48rem) {
+            .nav-open-button {
+                background: #fff;
+                border-color: #ddd;
+                color: #1a1a1a;
+            }
+
+            /* when the drawer is open, the button melts into it */
+            .nav-toggle:checked ~ .nav-open-button {
+                background: #242a35;
+                border-color: #242a35;
+                color: #e6ecf5;
+            }
+
+            .sidebar {
+                position: fixed;
+                top: 0;
+                bottom: 0;
+                left: 0;
+                z-index: 10;
+                width: min(80vw, 18rem);
+                height: 100vh;
+                height: 100dvh;
+                margin: 0;
+                background: #242a35;
+                padding-top: 3.2rem;
+                transform: translateX(-100%);
+                transition: transform 0.2s ease;
+            }
+
+            .nav-toggle:checked ~ .sidebar {
+                display: block;
+                transform: none;
+                box-shadow: 0 0 20px rgba(0, 0, 0, 0.2);
+            }
+
+            .nav-toggle:checked ~ .nav-overlay {
+                display: block;
+                position: fixed;
+                inset: 0;
+                z-index: 9;
+                background: rgba(0, 0, 0, 0.4);
+                cursor: pointer;
+            }
+        }
+
     </style>
 </head>
 <body>
+    {{if .Nav}}
+    <input type="checkbox" id="nav-toggle" class="nav-toggle">
+    <label for="nav-toggle" class="nav-open-button" aria-label="Toggle navigation">☰</label>
+    <label for="nav-toggle" class="nav-overlay"></label>
+    <nav class="sidebar">{{template "nav" .Nav}}</nav>
+    {{end}}
     <main>
         {{if .ShowTitle}}
             <h1>{{.Title}}</h1>
@@ -121,3 +263,14 @@
     </main>
 </body>
 </html>
+
+{{define "nav"}}
+<ul class="nav-list">
+    {{range .Children}}
+    <li>
+        <a href="{{.URL}}"{{if .Active}} class="active"{{end}}>{{or .Metadata.Title .Name}}</a>
+        {{if .Children}}{{template "nav" .}}{{end}}
+    </li>
+    {{end}}
+</ul>
+{{end}}

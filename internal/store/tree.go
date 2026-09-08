@@ -13,6 +13,7 @@ type Node struct {
 	Entry
 	Parent   *Node
 	Children []*Node
+	Store    *Store // attached by Tree; enables Metadata
 }
 
 // FullPath returns the logical path of the node from the root, for example
@@ -22,6 +23,38 @@ func (n *Node) FullPath() string {
 		return path.Join(n.Parent.FullPath(), n.Entry.Path)
 	}
 	return n.Entry.Path
+}
+
+// Metadata returns the frontmatter of the node's document; directories have
+// none. Tree attaches the Store automatically; detached nodes read only after
+// a Store is set.
+func (n *Node) Metadata() (Frontmatter, error) {
+	if n.Directory {
+		return Frontmatter{}, nil
+	}
+	if n.Store == nil {
+		return Frontmatter{}, fmt.Errorf("node %q is not attached to a store", n.Entry.Path)
+	}
+	doc, err := n.Store.Open(n.FullPath())
+	if err != nil {
+		return Frontmatter{}, err
+	}
+	defer doc.Close()
+	return doc.Front(), nil
+}
+
+// FindFunc returns the first node in depth-first order, including n itself,
+// for which match reports true; nil when none does.
+func (n *Node) FindFunc(match func(node *Node) bool) *Node {
+	if match(n) {
+		return n
+	}
+	for _, child := range n.Children {
+		if found := child.FindFunc(match); found != nil {
+			return found
+		}
+	}
+	return nil
 }
 
 // Tree builds the whole store as a tree rooted at a synthetic directory with
@@ -40,6 +73,7 @@ func (s *Store) Tree(filters ...Filter) (*Node, error) {
 			Path:      "/",
 			Directory: true,
 		},
+		Store: s,
 	}
 	items = append(items, root)
 
@@ -61,6 +95,7 @@ func (s *Store) Tree(filters ...Filter) (*Node, error) {
 			item := &Node{
 				Entry:  entry,
 				Parent: parent,
+				Store:  s,
 			}
 			parent.Children = append(parent.Children, item)
 			if entry.Directory {

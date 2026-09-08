@@ -168,6 +168,75 @@ func TestTreeMissingRoot(t *testing.T) {
 	assert.Contains(t, err.Error(), `list "/"`)
 }
 
+func TestNodeFindFunc(t *testing.T) {
+	dir := t.TempDir()
+	createFile(t, filepath.Join(dir, "a.md"), "a")
+	createFile(t, filepath.Join(dir, "docs/guide/deep.md"), "deep")
+
+	st, err := store.New(dir)
+	require.NoError(t, err)
+
+	root, err := st.Tree()
+	require.NoError(t, err)
+
+	// lookup by full path
+	docs := root.FindFunc(func(n *store.Node) bool { return n.FullPath() == "/docs" })
+	require.NotNil(t, docs)
+	assert.Equal(t, "docs", docs.Path)
+
+	deep := root.FindFunc(func(n *store.Node) bool { return n.FullPath() == "/docs/guide/deep.md" })
+	require.NotNil(t, deep)
+	assert.Equal(t, "deep.md", deep.Path)
+
+	// the receiver itself is a candidate
+	assert.Same(t, root, root.FindFunc(func(n *store.Node) bool { return n.Parent == nil }))
+
+	// first match in depth-first order wins (a.md sorts before docs but is a file;
+	// the root itself is excluded from the predicate)
+	assert.Same(t, docs, root.FindFunc(func(n *store.Node) bool { return n.Directory && n.Parent != nil }))
+
+	// identity predicate
+	assert.Same(t, deep, root.FindFunc(func(n *store.Node) bool { return n == deep }))
+
+	// no match
+	assert.Nil(t, root.FindFunc(func(n *store.Node) bool { return false }))
+}
+
+func TestNodeMetadata(t *testing.T) {
+	dir := t.TempDir()
+	createFile(t, filepath.Join(dir, "docs/b.md"), "---\ntitle: Beta\n---\nB")
+	createFile(t, filepath.Join(dir, "docs/a.md"), "plain")
+
+	st, err := store.New(dir)
+	require.NoError(t, err)
+	root, err := st.Tree(store.WithoutHidden, store.Files("*.md"))
+	require.NoError(t, err)
+
+	docs := root.FindFunc(func(n *store.Node) bool { return n.FullPath() == "/docs" })
+	b := root.FindFunc(func(n *store.Node) bool { return n.FullPath() == "/docs/b.md" })
+
+	// directories have no metadata
+	fm, err := docs.Metadata()
+	require.NoError(t, err)
+	assert.Equal(t, store.Frontmatter{}, fm)
+
+	fm, err = b.Metadata()
+	require.NoError(t, err)
+	assert.Equal(t, "Beta", fm.Title)
+
+	// detached nodes cannot be read
+	detached := &store.Node{Entry: store.Entry{Path: "x.md"}}
+	fm, err = detached.Metadata()
+	assert.Error(t, err)
+	assert.Equal(t, store.Frontmatter{}, fm)
+
+	// attaching a Store to a hand-built node makes it readable
+	manual := &store.Node{Entry: store.Entry{Path: "docs/b.md"}, Store: st}
+	fm, err = manual.Metadata()
+	require.NoError(t, err)
+	assert.Equal(t, "Beta", fm.Title)
+}
+
 func child(t *testing.T, parent *store.Node, name string) *store.Node {
 	t.Helper()
 	for _, c := range parent.Children {

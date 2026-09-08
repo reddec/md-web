@@ -50,6 +50,7 @@ var config struct {
 	DisableGZIP      bool          `help:"Disable gzip compression for HTTP" env:"MDWEB_DISABLE_GZIP"`
 	HTMLRewrite      bool          `name:"html-rewrite" env:"MDWEB_HTML_REWRITE" help:"Re-write .html to .md"`
 	Listing          bool          `name:"listing" short:"l" env:"MDWEB_LISTING" help:"Enable directory listing if no index.md there" `
+	DisableNav       bool          `help:"Disable navigation sidebar" env:"MDWEB_DISABLE_NAV"`
 	TLS              struct {
 		Enabled  bool   `help:"Enable TLS" env:"ENABLED"`
 		KeyFile  string `help:"Key file" env:"KEY" default:"/etc/tls/tls.key"`
@@ -69,7 +70,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	srv, err := newServer(config.Data, config.Base, config.Cache, config.Listing, config.HTMLRewrite)
+	srv, err := newServer(config.Data, config.Base, config.Cache, config.Listing, config.HTMLRewrite, config.DisableNav)
 	if err != nil {
 		slog.Error("failed to initialize service", "error", err)
 		os.Exit(1)
@@ -144,11 +145,12 @@ type Page struct {
 	Tags      []string      `yaml:"tags"`
 	Content   template.HTML `yaml:"-"`
 	ShowTitle bool          `yaml:"-"`
+	Nav       *navView      `yaml:"-"`
 	//CreatedAt time.Time
 	//UpdatedAt time.Time
 }
 
-func newServer(baseDir string, baseURL string, enableCache, enableListing, rewriteHTML bool) (*Server, error) {
+func newServer(baseDir string, baseURL string, enableCache, enableListing, rewriteHTML, disableNav bool) (*Server, error) {
 	md := goldmark.New(
 		goldmark.WithExtensions(
 			extension.GFM,
@@ -184,6 +186,8 @@ func newServer(baseDir string, baseURL string, enableCache, enableListing, rewri
 		enableCache:   enableCache,
 		enableListing: enableListing,
 		rewriteHTML:   rewriteHTML,
+		disableNav:    disableNav,
+		basePath:      baseURL,
 		templ:         tpl,
 		md:            md,
 	}, nil
@@ -195,6 +199,8 @@ type Server struct {
 	enableCache   bool
 	enableListing bool
 	rewriteHTML   bool
+	disableNav    bool
+	basePath      string
 	templ         *template.Template
 	md            goldmark.Markdown
 }
@@ -280,6 +286,7 @@ func (s *Server) getPage(p string) ([]byte, error) {
 		ShowTitle: config.Title,
 		Tags:      doc.Front().Tags,
 	}
+	page.Nav = s.nav(p)
 
 	var buffer bytes.Buffer
 	if err := s.templ.Execute(&buffer, page); err != nil {
@@ -305,6 +312,7 @@ func (s *Server) getDirectory(p string) ([]byte, error) {
 		Content:   template.HTML(output.String()),
 		ShowTitle: config.Title,
 	}
+	page.Nav = s.nav(p)
 
 	var buffer bytes.Buffer
 	if err := s.templ.Execute(&buffer, page); err != nil {
@@ -312,6 +320,24 @@ func (s *Server) getDirectory(p string) ([]byte, error) {
 	}
 
 	return buffer.Bytes(), nil
+}
+
+// nav builds the sidebar view for the resolved resource path p unless disabled.
+// p is already in store form (the router resolved it to a file or directory);
+// Clean only removes a trailing slash from directory pages.
+func (s *Server) nav(p string) *navView {
+	if s.disableNav {
+		return nil
+	}
+	tree, err := s.storage.Tree(store.WithoutHidden, store.Files("*.md"))
+	if err != nil {
+		return nil // nav is auxiliary; never fail the page because of it
+	}
+	target := path.Clean(p)
+	return &navView{
+		root:    tree,
+		current: tree.FindFunc(func(n *store.Node) bool { return n.FullPath() == target }),
+	}
 }
 
 type linkReWriter struct {
