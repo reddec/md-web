@@ -45,7 +45,7 @@ var config struct {
 	GracefulShutdown time.Duration `name:"graceful-shutdown" env:"MDWEB_GRACEFUL_SHUTDOWN" help:"Graceful shutdown timeout for server" default:"10s"`
 	Base             string        `name:"base" short:"B" env:"MDWEB_BASE" help:"Base URL for links"`
 	Data             string        `name:"data" short:"d" env:"MDWEB_DATA" help:"Serving directory" default:"./"`
-	Cache            bool          `name:"cache" short:"c" env:"MDWEB_CACHE" help:"Enable caching"`
+	DisableCache     bool          `env:"MDWEB_DISABLE_CACHE" help:"Disable in-memory page cache"`
 	Title            bool          `name:"title" short:"t" env:"MDWEB_TITLE" help:"Show title from metadata or filepath"`
 	DisableGZIP      bool          `help:"Disable gzip compression for HTTP" env:"MDWEB_DISABLE_GZIP"`
 	HTMLRewrite      bool          `name:"html-rewrite" env:"MDWEB_HTML_REWRITE" help:"Re-write .html to .md"`
@@ -70,7 +70,7 @@ func main() {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	srv, err := newServer(config.Data, config.Base, config.Cache, config.Listing, config.HTMLRewrite, config.DisableNav)
+	srv, err := newServer(config.Data, config.Base, !config.DisableCache, config.Listing, config.HTMLRewrite, config.DisableNav)
 	if err != nil {
 		slog.Error("failed to initialize service", "error", err)
 		os.Exit(1)

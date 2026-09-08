@@ -15,7 +15,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - HTML-to-Markdown URL rewriting (`.html` requests served as `.md`)
 - Directory listing for folders without `index.md`
 - Progressive navigation sidebar (drawer on mobile, enabled by default, no JS)
-- Optional in-memory page cache
+- In-memory page cache (enabled by default)
 - GZIP compression (enabled by default)
 - TLS/HTTPS support
 - OIDC authentication
@@ -79,7 +79,7 @@ All flags can also be set via environment variables.
 | `--bind` | `-b` | `MDWEB_BIND` | `:8080` | HTTP server bind address |
 | `--base` | `-B` | `MDWEB_BASE` | | Base URL prefix for link rewriting |
 | `--data` | `-d` | `MDWEB_DATA` | `./` | Directory with Markdown files |
-| `--cache` | `-c` | `MDWEB_CACHE` | `false` | Enable in-memory page cache |
+| `--disable-cache` | | `MDWEB_DISABLE_CACHE` | `false` | Disable in-memory page cache |
 | `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
 | `--html-rewrite` | | `MDWEB_HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
 | `--listing` | `-l` | `MDWEB_LISTING` | `false` | Enable directory listing if no `index.md` present |
