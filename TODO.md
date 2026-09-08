@@ -1,6 +1,6 @@
 - [ ] Listing
 - [ ] Custom layout (+inject, +devmode)
-- [ ] Home button / navigation
+- [x] Home button / navigation
 - [ ] Fuzzy search
 - [ ] Tags visualization & search
 - [ ] Metadata & og data

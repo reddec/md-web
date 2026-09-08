@@ -14,6 +14,7 @@ Lightweight Go web server that serves Markdown files as styled HTML pages. No bu
 - Base URL rewriting for subpath deployments
 - HTML-to-Markdown URL rewriting (`.html` requests served as `.md`)
 - Directory listing for folders without `index.md`
+- Progressive navigation sidebar (drawer on mobile, enabled by default, no JS)
 - Optional in-memory page cache
 - GZIP compression (enabled by default)
 - TLS/HTTPS support
@@ -82,6 +83,7 @@ All flags can also be set via environment variables.
 | `--title` | `-t` | `MDWEB_TITLE` | `false` | Show title from frontmatter or filename |
 | `--html-rewrite` | | `MDWEB_HTML_REWRITE` | `false` | Rewrite `.html` URLs to `.md` |
 | `--listing` | `-l` | `MDWEB_LISTING` | `false` | Enable directory listing if no `index.md` present |
+| `--disable-nav` | | `MDWEB_DISABLE_NAV` | `false` | Disable navigation sidebar |
 | `--tls-enabled` | | `MDWEB_TLS_ENABLED` | `false` | Enable HTTPS |
 | `--tls-cert-file` | | `MDWEB_TLS_CERT` | `/etc/tls/tls.crt` | Path to TLS certificate |
 | `--tls-key-file` | | `MDWEB_TLS_KEY` | `/etc/tls/tls.key` | Path to TLS private key |
