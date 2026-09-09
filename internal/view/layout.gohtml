@@ -268,7 +268,7 @@
 <ul class="nav-list">
     {{range .Children}}
     <li>
-        <a href="{{.URL}}"{{if .Active}} class="active"{{end}}>{{or .Metadata.Title .Name}}</a>
+        <a href="{{.Link}}"{{if .Active}} class="active"{{end}}>{{or .Metadata.Title .Name}}</a>
         {{if .Children}}{{template "nav" .}}{{end}}
     </li>
     {{end}}

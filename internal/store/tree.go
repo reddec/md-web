@@ -25,6 +25,57 @@ func (n *Node) FullPath() string {
 	return n.Entry.Path
 }
 
+// PageDir returns the canonical directory of the node's page: directories
+// and index pages map to their directory, other files to a directory named
+// after the page (a/b/c.md → a/b/c/). Rooted at "/".
+func (n *Node) PageDir() string {
+	switch {
+	case n.Directory:
+		if n.FullPath() == "/" {
+			return "/"
+		}
+		return n.FullPath() + "/"
+	case n.Path == "index.md":
+		if d := strings.TrimSuffix(n.FullPath(), "index.md"); d != "" {
+			return d
+		}
+		return "/"
+	default:
+		return strings.TrimSuffix(n.FullPath(), ".md") + "/"
+	}
+}
+
+// RootPath returns the relative path from the node's page directory to the
+// store root ("../../"), for re-anchoring links onto the page's canonical
+// location. Empty for the root.
+func (n *Node) RootPath() string {
+	dir := strings.Trim(n.PageDir(), "/")
+	if dir == "" {
+		return ""
+	}
+	return strings.Repeat("../", strings.Count(dir, "/")+1)
+}
+
+// File returns the direct file child of n with the given name, or nil.
+func (n *Node) File(name string) *Node {
+	for _, child := range n.Children {
+		if !child.Directory && child.Path == name {
+			return child
+		}
+	}
+	return nil
+}
+
+// Dir returns the direct directory child of n with the given name, or nil.
+func (n *Node) Dir(name string) *Node {
+	for _, child := range n.Children {
+		if child.Directory && child.Path == name {
+			return child
+		}
+	}
+	return nil
+}
+
 // Metadata returns the frontmatter of the node's document; directories have
 // none. Tree attaches the Store automatically; detached nodes read only after
 // a Store is set.

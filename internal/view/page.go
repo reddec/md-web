@@ -1,10 +1,22 @@
-package main
+package view
 
 import (
+	"html/template"
+	"path"
 	"strings"
 
 	"github.com/reddec/md-web/internal/store"
 )
+
+// pageParams is the data the layout template renders.
+type pageParams struct {
+	Path      string
+	Title     string
+	Tags      []string
+	Content   template.HTML // rendered markdown, marked safe for the layout
+	ShowTitle bool
+	Nav       *navView
+}
 
 // navView renders one level of the store tree as navigation sidebar entries.
 // The store tree is the single source of truth; titles, links, and the active
@@ -37,42 +49,43 @@ func (v navView) Metadata() store.Frontmatter {
 	return fm
 }
 
-// URL returns the href of the root node relative to the rendered page: ../
-// hops up to the store root, then the path down to the node. Browsers
-// normalize the climb, so the sidebar works under any mount base.
-// Directories link to their own page when it has an index.md, otherwise to
-// their first page beneath it — a bare directory link would 404. Pages
-// without a node in the tree (hidden or special) fall back to absolute store
-// paths.
-func (v navView) URL() string {
+// The entry's link, relative to the rendered page:
+// the current page's RootPath plus the root-relative target. Directories
+// link to their own page when it has an index.md, otherwise to their first
+// page beneath it — a bare directory link would 404.
+func (v navView) Link() string {
 	n := v.root
-	down := strings.TrimPrefix(n.FullPath(), "/")
-	if n.Directory {
-		if hasIndex(n) {
-			down += "/"
-		} else {
-			down, _ = firstPage(n) // rendered directories always have a page
-			down = strings.TrimPrefix(down, "/")
+
+	// what the entry points at: the extension-less page path, a directory
+	// with trailing slash, or the first page beneath an index-less directory
+	var target string
+	switch {
+	case !n.Directory:
+		target = strings.TrimSuffix(n.FullPath(), ".md")
+		if path.Base(target) == "index" {
+			target = strings.TrimSuffix(target, "index") // an index page links as its directory
 		}
-	} else {
-		down = strings.TrimSuffix(down, ".md")
+	case n.File("index.md") != nil:
+		target = n.FullPath() + "/"
+	default:
+		if fp, ok := firstPage(n); ok {
+			target = fp
+		} else {
+			target = n.FullPath() + "/" // pageless dirs never reach the sidebar
+		}
 	}
-	if v.current == nil {
-		return "/" + down
+
+	rel := strings.TrimPrefix(target, "/")
+	if rel == "" {
+		if root := v.current.RootPath(); root != "" {
+			return root
+		}
+		return "." // the store root, reached from the root page itself
 	}
-	return strings.Repeat("../", v.upHops()) + down
+	return v.current.RootPath() + rel
 }
 
-// upHops counts the ../ steps from the rendered page directory up to the
-// store root. A file page lives in its parent directory, a directory page in
-// the directory itself.
-func (v navView) upHops() int {
-	hops := strings.Count(strings.Trim(v.current.FullPath(), "/"), "/")
-	if v.current.Directory {
-		hops++
-	}
-	return hops
-}
+// Active reports whether the root node is the rendered page itself.
 
 // Active reports whether the root node is the rendered page itself.
 func (v navView) Active() bool { return v.root == v.current }
@@ -90,15 +103,6 @@ func (v navView) Children() []navView {
 	return out
 }
 
-func hasIndex(n *store.Node) bool {
-	for _, child := range n.Children {
-		if !child.Directory && child.Path == "index.md" {
-			return true
-		}
-	}
-	return false
-}
-
 // firstPage walks depth-first and returns the extension-less path of the
 // first markdown page beneath n; ok is false when no page exists.
 func firstPage(n *store.Node) (target string, ok bool) {
@@ -109,7 +113,11 @@ func firstPage(n *store.Node) (target string, ok bool) {
 			}
 			continue
 		}
-		return strings.TrimSuffix(child.FullPath(), ".md"), true
+		t := strings.TrimSuffix(child.FullPath(), ".md")
+		if path.Base(t) == "index" {
+			t = strings.TrimSuffix(t, "index")
+		}
+		return t, true
 	}
 	return "", false
 }

@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bytes"
-	"cmp"
 	"context"
 	_ "embed"
 	"errors"
 	"fmt"
-	"html/template"
 	"log/slog"
 	"net/http"
 	"os"
@@ -21,29 +18,14 @@ import (
 	"github.com/NYTimes/gziphandler"
 	"github.com/alecthomas/kong"
 	oidclogin "github.com/reddec/oidc-login"
-	treeblood "github.com/wyatt915/goldmark-treeblood"
-	"github.com/yuin/goldmark"
-	highlighting "github.com/yuin/goldmark-highlighting/v2"
-	"github.com/yuin/goldmark/ast"
-	"github.com/yuin/goldmark/extension"
-	"github.com/yuin/goldmark/parser"
-	"github.com/yuin/goldmark/renderer/html"
-	"github.com/yuin/goldmark/text"
-	"github.com/yuin/goldmark/util"
-	"go.abhg.dev/goldmark/frontmatter"
-	"go.abhg.dev/goldmark/mermaid"
-	"go.abhg.dev/goldmark/wikilink"
 
 	"github.com/reddec/md-web/internal/store"
+	"github.com/reddec/md-web/internal/view"
 )
 
-//go:embed layout.gohtml
-var layout string
-
-var config struct {
+type serveCmd struct {
 	Bind             string        `name:"bind" short:"b" env:"MDWEB_BIND" help:"Binding address" default:":8080"`
 	GracefulShutdown time.Duration `name:"graceful-shutdown" env:"MDWEB_GRACEFUL_SHUTDOWN" help:"Graceful shutdown timeout for server" default:"10s"`
-	Base             string        `name:"base" short:"B" env:"MDWEB_BASE" help:"Base URL for links"`
 	Data             string        `name:"data" short:"d" env:"MDWEB_DATA" help:"Serving directory" default:"./"`
 	DisableCache     bool          `env:"MDWEB_DISABLE_CACHE" help:"Disable in-memory page cache"`
 	Title            bool          `name:"title" short:"t" env:"MDWEB_TITLE" help:"Show title from metadata or filepath"`
@@ -65,12 +47,13 @@ var config struct {
 	} `embed:"" prefix:"oidc-" envprefix:"MDWEB_OIDC_"`
 }
 
-func main() {
-	kong.Parse(&config)
+// Run serves the markdown directory over HTTP: every page lives at its
+// canonical directory (/page → /page/), matching the render command's output.
+func (c *serveCmd) Run() error {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, os.Kill)
 	defer cancel()
 
-	srv, err := newServer(config.Data, config.Base, !config.DisableCache, config.Listing, config.HTMLRewrite, config.DisableNav)
+	srv, err := c.newServer()
 	if err != nil {
 		slog.Error("failed to initialize service", "error", err)
 		os.Exit(1)
@@ -78,13 +61,13 @@ func main() {
 
 	var handler http.Handler = srv
 
-	if config.OIDC.Enabled {
+	if c.OIDC.Enabled {
 
 		auth, err := oidclogin.New(ctx, oidclogin.Config{
-			IssuerURL:    config.OIDC.Issuer,
-			ClientID:     config.OIDC.ClientID,
-			ClientSecret: config.OIDC.ClientSecret,
-			TrustProxy:   config.OIDC.TrustProxy,
+			IssuerURL:    c.OIDC.Issuer,
+			ClientID:     c.OIDC.ClientID,
+			ClientSecret: c.OIDC.ClientSecret,
+			TrustProxy:   c.OIDC.TrustProxy,
 			Logger: oidclogin.LoggerFunc(func(level oidclogin.Level, msg string) {
 				switch level {
 				case oidclogin.LogInfo:
@@ -103,22 +86,22 @@ func main() {
 			os.Exit(2)
 		}
 		handler = auth.Secure(handler)
-		slog.Info("OIDC enabled", "issuer", config.OIDC.Issuer)
+		slog.Info("OIDC enabled", "issuer", c.OIDC.Issuer)
 	}
 
-	if !config.DisableGZIP {
+	if !c.DisableGZIP {
 		handler = gziphandler.GzipHandler(handler)
 		slog.Info("gzip compression enabled")
 	}
 
 	httpServer := &http.Server{
-		Addr:    config.Bind,
+		Addr:    c.Bind,
 		Handler: handler,
 	}
 
 	go func() {
 		<-ctx.Done()
-		tCtx, tCancel := context.WithTimeout(context.Background(), config.GracefulShutdown)
+		tCtx, tCancel := context.WithTimeout(context.Background(), c.GracefulShutdown)
 		defer tCancel()
 		if err := httpServer.Shutdown(tCtx); err != nil {
 			slog.Error("failed to shutdown http server", "error", err)
@@ -126,9 +109,9 @@ func main() {
 	}()
 
 	slog.Info("ready")
-	if config.TLS.Enabled {
+	if c.TLS.Enabled {
 		slog.Info("starting https server")
-		err = httpServer.ListenAndServeTLS(config.TLS.CertFile, config.TLS.KeyFile)
+		err = httpServer.ListenAndServeTLS(c.TLS.CertFile, c.TLS.KeyFile)
 	} else {
 		slog.Info("starting http server")
 		err = httpServer.ListenAndServe()
@@ -137,258 +120,133 @@ func main() {
 		slog.Error("failed to start http server", "error", err)
 		os.Exit(3)
 	}
+	return nil
 }
 
-type Page struct {
-	Path      string        `yaml:"-"`
-	Title     string        `yaml:"title"`
-	Tags      []string      `yaml:"tags"`
-	Content   template.HTML `yaml:"-"`
-	ShowTitle bool          `yaml:"-"`
-	Nav       *navView      `yaml:"-"`
-	//CreatedAt time.Time
-	//UpdatedAt time.Time
-}
-
-func newServer(baseDir string, baseURL string, enableCache, enableListing, rewriteHTML, disableNav bool) (*Server, error) {
-	md := goldmark.New(
-		goldmark.WithExtensions(
-			extension.GFM,
-			&wikilink.Extender{},
-			treeblood.MathML(),
-			&mermaid.Extender{},
-			&frontmatter.Extender{},
-			highlighting.Highlighting,
-		),
-		goldmark.WithParserOptions(
-			parser.WithASTTransformers(
-				util.Prioritized(&linkReWriter{basePath: []byte(baseURL)}, 100),
-			),
-			parser.WithAutoHeadingID(),
-		),
-		goldmark.WithRendererOptions(
-			html.WithHardWraps(),
-		),
-	)
-
-	storage, err := store.New(baseDir)
+// newServer wires the view layer with the HTTP wrapper: caching, redirects,
+// and status codes are serve concerns; rendering lives in the view.
+func (c *serveCmd) newServer() (*Server, error) {
+	st, err := store.New(c.Data)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("open store: %w", err)
 	}
-
-	tpl, err := template.New("").Parse(layout)
+	v, err := view.New(view.Options{
+		Listing: c.Listing,
+		Nav:     !c.DisableNav,
+		Title:   c.Title,
+	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("build view: %w", err)
 	}
-
 	return &Server{
-		storage:       storage,
-		enableCache:   enableCache,
-		enableListing: enableListing,
-		rewriteHTML:   rewriteHTML,
-		disableNav:    disableNav,
-		basePath:      baseURL,
-		templ:         tpl,
-		md:            md,
+		view:        v,
+		store:       st,
+		enableCache: !c.DisableCache,
+		rewriteHTML: c.HTMLRewrite,
 	}, nil
 }
 
+// HTTP wrapper around the view: caching, canonical redirects, and status codes.
 type Server struct {
-	storage       *store.Store
-	cache         sync.Map // string -> bytes
-	enableCache   bool
-	enableListing bool
-	rewriteHTML   bool
-	disableNav    bool
-	basePath      string
-	templ         *template.Template
-	md            goldmark.Markdown
+	view        *view.View
+	store       *store.Store
+	cache       sync.Map // canonical URL path -> rendered page
+	enableCache bool
+	rewriteHTML bool
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	const HTML = ".html"
+	p := r.URL.Path
 
-	var pageContent []byte
-	if content, ok := s.cache.Load(r.URL.Path); ok {
-		pageContent = content.([]byte)
-	} else {
-		var err error
-		var page []byte
-		if s.enableListing && s.storage.IsDir(r.URL.Path) {
-			if !strings.HasSuffix(r.URL.Path, "/") {
-				// redirect to `./`
-				w.Header().Set("Location", "./"+path.Base(r.URL.Path)+"/")
-				w.WriteHeader(http.StatusFound)
-				return
-			}
+	// canonical URLs: every page lives in its directory (/a → /a/); requests
+	// with an extension (/a.md, /a.html) are direct file requests and exempt
+	if !strings.HasSuffix(p, "/") && path.Ext(p) == "" {
+		w.Header().Set("Location", "./"+path.Base(p)+"/")
+		w.WriteHeader(http.StatusMovedPermanently)
+		return
+	}
 
-			if p := path.Join(r.URL.Path, "index.md"); s.storage.IsFile(p) {
-				page, err = s.getPage(p)
-			} else {
-				page, err = s.getDirectory(r.URL.Path)
-			}
+	page, err := s.page(p)
+	if err != nil {
+		slog.Error("failed to render page", "path", p, "error", err)
+		if errors.Is(err, os.ErrNotExist) {
+			w.WriteHeader(http.StatusNotFound)
 		} else {
-			p := r.URL.Path
-			if strings.HasSuffix(r.URL.Path, "/") {
-				p += "index.md"
-			} else if s.rewriteHTML && strings.HasSuffix(r.URL.Path, HTML) {
-				p = p[:len(p)-len(HTML)] + ".md"
-			} else if !strings.HasSuffix(r.URL.Path, ".md") {
-				p = p + ".md"
-			}
-
-			page, err = s.getPage(p)
+			w.WriteHeader(http.StatusInternalServerError)
 		}
-
-		if err != nil {
-			slog.Error("failed to get page", "path", r.URL.Path, "error", err)
-			if errors.Is(err, os.ErrNotExist) {
-				w.WriteHeader(http.StatusNotFound)
-			} else {
-				w.WriteHeader(http.StatusInternalServerError)
-			}
-			return
-		}
-		if s.enableCache {
-			s.cache.Store(r.URL.Path, page)
-		}
-		pageContent = page
+		return
 	}
 
 	w.Header().Add("Content-Type", "text/html; charset=utf-8")
-	w.Header().Add("Content-Length", strconv.Itoa(len(pageContent)))
-	_, _ = w.Write(pageContent)
+	w.Header().Add("Content-Length", strconv.Itoa(len(page)))
+	_, _ = w.Write(page)
 }
 
-func (s *Server) getPage(p string) ([]byte, error) {
-	doc, err := s.storage.Open(p)
+// page returns the rendered HTML for the canonical path p — from the cache
+// when enabled, rendering and storing it otherwise. The error wraps
+// os.ErrNotExist when p has no page.
+func (s *Server) page(p string) ([]byte, error) {
+	if content, ok := s.cache.Load(p); ok {
+		return content.([]byte), nil
+	}
+
+	tree, err := s.store.Tree(store.WithoutHidden, store.Files("*.md"))
 	if err != nil {
-
-		return nil, fmt.Errorf("open page %q: %w", p, err)
-
+		return nil, fmt.Errorf("build tree: %w", err)
 	}
-	defer doc.Close()
-	content, err := doc.ReadBytes()
+	node := s.resolve(tree, p)
+	if node == nil {
+		return nil, fmt.Errorf("resolve %q: %w", p, os.ErrNotExist)
+	}
+
+	page, err := s.view.Render(node)
 	if err != nil {
-		return nil, fmt.Errorf("read file %q: %w", p, err)
+		return nil, fmt.Errorf("render %q: %w", p, err)
 	}
-	var output bytes.Buffer
-	if err := s.md.Convert(content, &output); err != nil {
-		return nil, fmt.Errorf("convert file %q: %w", p, err)
+	if s.enableCache {
+		s.cache.Store(p, page)
 	}
-
-	title := strings.TrimSuffix(path.Base(p), ".md")
-
-	page := &Page{
-		Path:      p,
-		Title:     cmp.Or(doc.Front().Title, title),
-		Content:   template.HTML(output.String()),
-		ShowTitle: config.Title,
-		Tags:      doc.Front().Tags,
-	}
-	page.Nav = s.nav(p)
-
-	var buffer bytes.Buffer
-	if err := s.templ.Execute(&buffer, page); err != nil {
-		return nil, fmt.Errorf("execute layout %q: %w", p, err)
-	}
-
-	return buffer.Bytes(), nil
+	return page, nil
 }
 
-func (s *Server) getDirectory(p string) ([]byte, error) {
-	list, err := s.storage.List(p)
-	if err != nil {
-		return nil, fmt.Errorf("list: %w", err)
-	}
-	var output bytes.Buffer
-	if err := s.md.Convert([]byte(renderListing(!s.storage.IsRoot(p), list)), &output); err != nil {
-		return nil, fmt.Errorf("convert file %q: %w", p, err)
-	}
-
-	page := &Page{
-		Path:      p,
-		Title:     path.Base(p) + "/",
-		Content:   template.HTML(output.String()),
-		ShowTitle: config.Title,
-	}
-	page.Nav = s.nav(p)
-
-	var buffer bytes.Buffer
-	if err := s.templ.Execute(&buffer, page); err != nil {
-		return nil, fmt.Errorf("execute layout %q: %w", p, err)
-	}
-
-	return buffer.Bytes(), nil
-}
-
-// nav builds the sidebar view for the resolved resource path p unless disabled.
-// p is already in store form (the router resolved it to a file or directory);
-// Clean only removes a trailing slash from directory pages.
-func (s *Server) nav(p string) *navView {
-	if s.disableNav {
-		return nil
-	}
-	tree, err := s.storage.Tree(store.WithoutHidden, store.Files("*.md"))
-	if err != nil {
-		return nil // nav is auxiliary; never fail the page because of it
-	}
-	target := path.Clean(p)
-	return &navView{
-		root:    tree,
-		current: tree.FindFunc(func(n *store.Node) bool { return n.FullPath() == target }),
-	}
-}
-
-type linkReWriter struct {
-	basePath []byte
-}
-
-func (r *linkReWriter) Transform(node *ast.Document, _ text.Reader, _ parser.Context) {
-	if len(r.basePath) == 0 {
-		return
-	}
-	ast.Walk(node, func(n ast.Node, entering bool) (ast.WalkStatus, error) {
-		if !entering {
-			return ast.WalkContinue, nil
+// resolve maps a canonical request path to the node to render: a directory
+// URL renders its index page, else the directory-named page, else the
+// directory itself (whose rendering falls back to the listing). Direct
+// /x.md and /x.html requests render their file.
+func (s *Server) resolve(tree *store.Node, p string) *store.Node {
+	if strings.HasSuffix(p, "/") {
+		if idx := find(tree, path.Join(p, "index.md")); idx != nil {
+			return idx
 		}
-		switch v := n.(type) {
-		case *ast.Link:
-			dest := v.Destination
-			if bytes.HasSuffix(dest, []byte{'/'}) {
-				v.Destination = append(r.basePath, dest...)
-			}
-		case *ast.Image:
-			dest := v.Destination
-			if bytes.HasSuffix(dest, []byte{'/'}) {
-				v.Destination = append(r.basePath, dest...)
+		if p != "/" {
+			if page := find(tree, strings.TrimSuffix(p, "/")+".md"); page != nil {
+				return page
 			}
 		}
-		return ast.WalkContinue, nil
-	})
+		return find(tree, strings.TrimSuffix(p, "/"))
+	}
+	if s.rewriteHTML && strings.HasSuffix(p, ".html") {
+		p = p[:len(p)-len(".html")] + ".md"
+	} else if !strings.HasSuffix(p, ".md") {
+		p += ".md"
+	}
+	return find(tree, p)
 }
 
-func renderListing(hasParent bool, list []store.Entry) string {
-	var buffer strings.Builder
+// find returns the tree node at the store path, or nil.
+func find(tree *store.Node, p string) *store.Node {
+	return tree.FindFunc(func(n *store.Node) bool { return n.FullPath() == p })
+}
 
-	if hasParent {
-		buffer.WriteString("- [⤴️ ..](../)\n")
-	}
+var cli struct {
+	Serve  serveCmd  `cmd:"" default:"withargs" help:"Serve the markdown directory over HTTP"`
+	Render renderCmd `cmd:"" help:"Render self-contained static site into a directory"`
+}
 
-	for _, entry := range list {
-		if !entry.Directory && !strings.HasSuffix(entry.Path, ".md") {
-			continue
-		}
-		buffer.WriteString("- [")
-		if entry.Directory {
-			buffer.WriteString("🗀 ")
-		} else {
-			buffer.WriteString("🖹 ")
-		}
-		buffer.WriteString(entry.Path)
-		buffer.WriteString("](")
-		buffer.WriteString(entry.Path)
-		buffer.WriteString(")\n")
+func main() {
+	kongCtx := kong.Parse(&cli)
+	if err := kongCtx.Run(); err != nil {
+		slog.Error("command failed", "error", err)
+		os.Exit(1)
 	}
-	return buffer.String()
 }
